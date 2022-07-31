@@ -4,7 +4,7 @@ from sklearn.metrics import f1_score
 from utils.adjustpredicts import adjust_predicts
 
 
-def bestf1_threshold(test_scores, test_label, adjust=False, start=1e-6, end=1e-3, search_step=1000):
+def bestf1_threshold(test_scores, test_label, adjust=False, start=0, end=1, search_step=1000):
     best_f1 = 0.0
     best_threshold = 0.0
 

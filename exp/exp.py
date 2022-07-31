@@ -2,6 +2,7 @@ import os
 from time import time
 
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 import torch
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch import optim, nn
@@ -47,8 +48,9 @@ class Exp:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = AnomalyTransformer().to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=1e-4)
-        self.scheduler = LambdaLR(self.optimizer, lr_lambda=lambda epoch: 0.5 ** ((epoch - 1) // 2))
-        self.early_stopping = EarlyStopping(patience=self.patience, verbose=self.verbose,
+        self.scheduler = LambdaLR(self.optimizer, lr_lambda=lambda epoch: 0.5**((epoch - 1) // 1))
+        self.early_stopping = EarlyStopping(patience=self.patience,
+                                            verbose=self.verbose,
                                             path=self.model_dir + 'model.pkl')
         self.MSE = nn.MSELoss(reduction='none')
         self.KL = nn.KLDivLoss(reduction='none')
@@ -103,15 +105,8 @@ class Exp:
                 series_loss, prior_loss, rec_loss = self._get_loss(batch_x, output, series, prior)
 
                 loss1 = rec_loss + self.k * prior_loss
-                loss1.backward(retain_graph=True)  # retain_graph可以再次backward
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-
-                batch_x = batch_x.float().to(self.device)
-                output, series, prior = self.model(batch_x)
-                series_loss, prior_loss, rec_loss = self._get_loss(batch_x, output, series, prior)
-
                 loss2 = rec_loss - self.k * series_loss
+                loss1.backward(retain_graph=True)  # retain_graph可以再次backward
                 loss2.backward()
                 self.optimizer.step()
                 self.optimizer.zero_grad()
@@ -140,7 +135,7 @@ class Exp:
             end = time()
             print("Epoch: {0} || Train Loss 1: {1:.4f} | Train Loss 2: {2:.4f} || "
                   "Vali Loss 1: {3:.4f} | Vali Loss 2: {4:.4f} || Cost: {5:.4f} s".format(
-                e + 1, train_loss_1, train_loss_2, valid_loss_1, valid_loss_2, end - start))
+                      e + 1, train_loss_1, train_loss_2, valid_loss_1, valid_loss_2, end - start))
 
             self.early_stopping(valid_loss_1, valid_loss_2, self.model)
             if self.early_stopping.early_stop:
@@ -175,11 +170,16 @@ class Exp:
 
         thre_score = np.concatenate(thre_score, axis=0).reshape(-1)
         thre_label = np.concatenate(thre_label, axis=0).reshape(-1)
+        test_score = np.concatenate(test_score, axis=0).reshape(-1)
+        test_label = np.concatenate(test_label, axis=0).reshape(-1)
+
+        scaler = MinMaxScaler()
+        thre_score = scaler.fit_transform(thre_score.reshape(-1, 1)).reshape(-1)
+        test_score = scaler.transform(test_score.reshape(-1, 1)).reshape(-1)
+
         thresh = bestf1_threshold(thre_score, thre_label, self.adjust)
         print("Threshold :", thresh)
 
-        test_score = np.concatenate(test_score, axis=0).reshape(-1)
-        test_label = np.concatenate(test_label, axis=0).reshape(-1)
         test_pred = (test_score > thresh).astype(int)
 
         if self.adjust:
